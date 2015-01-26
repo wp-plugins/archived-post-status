@@ -2,12 +2,33 @@
 /**
  * Plugin Name: Archived Post Status
  * Description: Allows posts and pages to be archived so you can unpublish content without having to trash it.
- * Version: 0.2.0
+ * Version: 0.3.0
  * Author: Frankie Jarrett
  * Author URI: http://frankiejarrett.com
  * License: GPLv2+
  * Text Domain: archived-post-status
  */
+
+/**
+ * Define plugin constants
+ */
+define( 'ARCHIVED_POST_STATUS_VERSION', '0.3.0' );
+define( 'ARCHIVED_POST_STATUS_PLUGIN', plugin_basename( __FILE__ ) );
+define( 'ARCHIVED_POST_STATUS_DIR', plugin_dir_path( __FILE__ ) );
+define( 'ARCHIVED_POST_STATUS_URL', plugin_dir_url( __FILE__ ) );
+define( 'ARCHIVED_POST_STATUS_LANG_PATH', dirname( ARCHIVED_POST_STATUS_PLUGIN ) . '/languages' );
+
+/**
+ * Load languages
+ *
+ * @action plugins_loaded
+ *
+ * @return void
+ */
+function aps_i18n() {
+	load_plugin_textdomain( 'archived-post-status', false, ARCHIVED_POST_STATUS_LANG_PATH );
+}
+add_action( 'plugins_loaded', 'aps_i18n' );
 
 /**
  * Register a custom post status for Archived
@@ -19,32 +40,17 @@
 function aps_register_archive_post_status() {
 	$args = array(
 		'label'                     => __( 'Archived', 'archived-post-status' ),
-		'public'                    => apply_filters( 'aps_status_arg_public', false ),
-		'exclude_from_search'       => apply_filters( 'aps_status_arg_exclude_from_search', true ),
-		'show_in_admin_all_list'    => apply_filters( 'aps_status_arg_show_in_admin_all_list', true ),
-		'show_in_admin_status_list' => apply_filters( 'aps_status_arg_show_in_admin_status_list', true ),
+		'public'                    => apply_filters( 'aps_status_arg_public', aps_current_user_can_view() ),
+		'private'                   => apply_filters( 'aps_status_arg_private', true ),
+		'exclude_from_search'       => apply_filters( 'aps_status_arg_exclude_from_search', ! aps_current_user_can_view() ),
+		'show_in_admin_all_list'    => apply_filters( 'aps_status_arg_show_in_admin_all_list', aps_current_user_can_view() ),
+		'show_in_admin_status_list' => apply_filters( 'aps_status_arg_show_in_admin_status_list', aps_current_user_can_view() ),
 		'label_count'               => _n_noop( 'Archived <span class="count">(%s)</span>', 'Archived <span class="count">(%s)</span>', 'archived-post-status' ),
 	);
 
 	register_post_status( 'archive', $args );
 }
 add_action( 'init', 'aps_register_archive_post_status' );
-
-/**
- * Returns TRUE if in the WP Admin, otherwise FALSE
- *
- * @filter aps_status_arg_public
- * @filter aps_status_arg_show_in_admin_all_list
- * @filter aps_status_arg_show_in_admin_status_list
- *
- * @return bool
- */
-function aps_is_admin() {
-	return is_admin();
-}
-add_filter( 'aps_status_arg_public', 'aps_is_admin' );
-add_filter( 'aps_status_arg_show_in_admin_all_list', 'aps_is_admin' );
-add_filter( 'aps_status_arg_show_in_admin_status_list', 'aps_is_admin' );
 
 /**
  * Returns TRUE if on the frontend, otherwise FALSE
@@ -59,6 +65,67 @@ function aps_is_frontend() {
 add_filter( 'aps_status_arg_exclude_from_search', 'aps_is_frontend' );
 
 /**
+ * Returns TRUE if current user can view, otherwise FALSE
+ *
+ * @return bool
+ */
+function aps_current_user_can_view() {
+	/**
+	 * Default capability to grant ability to view Archived content
+	 *
+	 * @since 0.3.0
+	 *
+	 * @return string
+	 */
+	$capability = apply_filters( 'aps_default_read_capability', 'read_private_posts' );
+
+	return current_user_can( $capability );
+}
+
+/**
+ * Filter archived post titles on the frontend
+ *
+ * @param string $title
+ * @param int    $post_id
+ *
+ * @return string
+ */
+function aps_the_title( $title, $post_id ) {
+	$post = get_post( $post_id );
+
+	if ( ! is_admin() && 'archive' === $post->post_status ) {
+		$title = sprintf( '%s: %s', __( 'Archived', 'archived-post-status' ), $title );
+	}
+
+	return $title;
+}
+add_filter( 'the_title', 'aps_the_title', 10, 2 );
+
+/**
+ * Check if a post type should NOT be using the Archived status
+ *
+ * @param string $post_type
+ *
+ * @return bool
+ */
+function aps_is_excluded_post_type( $post_type ) {
+	/**
+	 * Prevent the Archived status from being used on these post types
+	 *
+	 * @since 0.1.0
+	 *
+	 * @return array
+	 */
+	$excluded = apply_filters( 'aps_excluded_post_types', array( 'attachment' ) );
+
+	if ( in_array( $post_type, $excluded ) ) {
+		return true;
+	}
+
+	return false;
+}
+
+/**
  * Modify the DOM on post screens
  *
  * @action admin_footer-post.php
@@ -68,9 +135,7 @@ add_filter( 'aps_status_arg_exclude_from_search', 'aps_is_frontend' );
 function aps_post_screen_js() {
 	global $post;
 
-	$excluded = apply_filters( 'aps_excluded_post_types', array( 'attachment' ) );
-
-	if ( in_array( $post->post_type, $excluded ) ) {
+	if ( aps_is_excluded_post_type( $post->post_type ) ) {
 		return;
 	}
 
@@ -94,6 +159,11 @@ add_action( 'admin_footer-post.php', 'aps_post_screen_js' );
  * @return void
  */
 function aps_edit_screen_js() {
+	global $typenow;
+
+	if ( aps_is_excluded_post_type( $typenow ) ) {
+		return;
+	}
 	?>
 	<script>
 	jQuery( document ).ready( function( $ ) {
@@ -128,10 +198,6 @@ function aps_edit_screen_js() {
 			$row.find( '.column-title a.row-title' ).remove();
 			$row.find( '.column-title strong' ).prepend( title );
 			$row.find( '.row-actions .edit' ).remove();
-			$row.find( '.row-actions .view' ).remove();
-			$row.find( '.row-actions .trash' ).contents().filter( function() {
-				return this.nodeType === Node.TEXT_NODE;
-			}).remove();
 		}
 	});
 	</script>
@@ -153,7 +219,7 @@ function aps_load_post_screen() {
 	$post    = get_post( $post_id );
 
 	if (
-		! isset( $post->post_status )
+		aps_is_excluded_post_type( $post->post_type )
 		||
 		'archive' !== $post->post_status
 	) {
@@ -192,6 +258,8 @@ add_action( 'load-post.php', 'aps_load_post_screen' );
  */
 function aps_display_post_states( $post_states, $post ) {
 	if (
+		aps_is_excluded_post_type( $post->post_type )
+		||
 		'archive' !== $post->post_status
 		||
 		'archive' === get_query_var( 'post_status' )
@@ -199,6 +267,44 @@ function aps_display_post_states( $post_states, $post ) {
 		return $post_states;
 	}
 
-	return array( __( 'Archived', 'archived-post-status' ) );
+	return array_merge( $post_states, array( 'archive' => __( 'Archived', 'archived-post-status' ) ) );
 }
 add_filter( 'display_post_states', 'aps_display_post_states', 10, 2 );
+
+/**
+ * Close comments and pings when content is archived
+ *
+ * @action save_post
+ *
+ * @param int    $post_id  Post ID
+ * @param object $post     WP_Post
+ * @param bool   $update   Whether this is an existing post being updated or not
+ *
+ * @return void
+ */
+function aps_save_post( $post_id, $post, $update ) {
+	if (
+		aps_is_excluded_post_type( $post->post_type )
+		||
+		wp_is_post_revision( $post )
+	) {
+		return;
+	}
+
+	if ( 'archive' === $post->post_status ) {
+		// Unhook to prevent infinite loop
+		remove_action( 'save_post', __FUNCTION__ );
+
+		$args = array(
+			'ID'             => $post->ID,
+			'comment_status' => 'closed',
+			'ping_status'    => 'closed',
+		);
+
+		wp_update_post( $args );
+
+		// Add hook back again
+		add_action( 'save_post', __FUNCTION__, 10, 3 );
+	}
+}
+add_action( 'save_post', 'aps_save_post', 10, 3 );
