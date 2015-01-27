@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Archived Post Status
  * Description: Allows posts and pages to be archived so you can unpublish content without having to trash it.
- * Version: 0.3.0
+ * Version: 0.3.1
  * Author: Frankie Jarrett
  * Author URI: http://frankiejarrett.com
  * License: GPLv2+
@@ -12,7 +12,7 @@
 /**
  * Define plugin constants
  */
-define( 'ARCHIVED_POST_STATUS_VERSION', '0.3.0' );
+define( 'ARCHIVED_POST_STATUS_VERSION', '0.3.1' );
 define( 'ARCHIVED_POST_STATUS_PLUGIN', plugin_basename( __FILE__ ) );
 define( 'ARCHIVED_POST_STATUS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'ARCHIVED_POST_STATUS_URL', plugin_dir_url( __FILE__ ) );
@@ -29,6 +29,20 @@ function aps_i18n() {
 	load_plugin_textdomain( 'archived-post-status', false, ARCHIVED_POST_STATUS_LANG_PATH );
 }
 add_action( 'plugins_loaded', 'aps_i18n' );
+
+/**
+ * Translations strings placeholder function
+ *
+ * Translation strings that are not used elsewhere but Plugin Title and Description
+ * are helt here to be picked up by Poedit. Keep these in sync with the actual plugin's
+ * title and description.
+ *
+ * @return void
+ */
+function aps_i18n_strings() {
+	__( 'Archived Post Status', 'archived-post-status' );
+	__( 'Allows posts and pages to be archived so you can unpublish content without having to trash it.', 'archived-post-status' );
+}
 
 /**
  * Register a custom post status for Archived
@@ -86,14 +100,14 @@ function aps_current_user_can_view() {
  * Filter archived post titles on the frontend
  *
  * @param string $title
- * @param int    $post_id
+ * @param int    $post_id (optional)
  *
  * @return string
  */
-function aps_the_title( $title, $post_id ) {
+function aps_the_title( $title, $post_id = null ) {
 	$post = get_post( $post_id );
 
-	if ( ! is_admin() && 'archive' === $post->post_status ) {
+	if ( ! is_admin() && isset( $post->post_status ) && 'archive' === $post->post_status ) {
 		$title = sprintf( '%s: %s', __( 'Archived', 'archived-post-status' ), $title );
 	}
 
@@ -241,7 +255,7 @@ function aps_load_post_screen() {
 
 	wp_die(
 		__( "You can't edit this item because it has been Archived. Please change the post status and try again.", 'archived-post-status' ),
-		__( 'WordPress &rsaquo; Error' )
+		translate( 'WordPress &rsaquo; Error' )
 	);
 }
 add_action( 'load-post.php', 'aps_load_post_screen' );
